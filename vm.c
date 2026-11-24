@@ -1,9 +1,9 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <stdint.h>
 
 #define PAGE_SIZE   256
 #define NUM_PAGES   256
@@ -16,28 +16,27 @@
 typedef struct { int valid, page, frame; long loaded, used; } TlbEntry;
 
 static TlbEntry tlb[TLB_SIZE];
-static int page_table[NUM_PAGES];          /* pagina -> frame (-1 = ausente) */
-static int frame_page[NUM_FRAMES];         /* frame -> pagina (-1 = livre)   */
+static int page_table[NUM_PAGES];
+static int frame_page[NUM_FRAMES];
 static long frame_loaded[NUM_FRAMES], frame_used[NUM_FRAMES];
 static signed char memory[NUM_FRAMES][PAGE_SIZE];
 static int lookup_page;
-static int found[TLB_SIZE];                /* resultado de cada thread */
+static int found[TLB_SIZE];
 
 static void *tlb_search(void *arg) {
-    int i = (int)(long)arg;
+    int i = (int)(intptr_t)arg;
     found[i] = (tlb[i].valid && tlb[i].page == lookup_page);
     return NULL;
 }
 
-/* uma thread por entrada da TLB; retorna indice da entrada ou -1 */
 static int tlb_lookup(int page) {
     pthread_t th[TLB_SIZE];
     int created[TLB_SIZE], res = -1;
     lookup_page = page;
     for (int i = 0; i < TLB_SIZE; i++) {
         found[i] = 0;
-        created[i] = (pthread_create(&th[i], NULL, tlb_search, (void *)(long)i) == 0);
-        if (!created[i]) tlb_search((void *)(long)i); /* fallback */
+        created[i] = (pthread_create(&th[i], NULL, tlb_search, (void *)(intptr_t)i) == 0);
+        if (!created[i]) tlb_search((void *)(intptr_t)i);
     }
     for (int i = 0; i < TLB_SIZE; i++) if (created[i]) pthread_join(th[i], NULL);
     for (int i = 0; i < TLB_SIZE; i++) if (found[i]) res = i;
@@ -68,13 +67,12 @@ static int usage(const char *p) {
     return 1;
 }
 
-static int parse_algo(const char *s) { /* 0 fifo, 1 lru, -1 invalido */
+static int parse_algo(const char *s) {
     if (strcmp(s, "fifo") == 0) return 0;
     if (strcmp(s, "lru") == 0) return 1;
     return -1;
 }
 
-/* Le e valida o arquivo inteiro: um inteiro 0..65535 por linha. */
 static int *read_addresses(const char *path, int *count) {
     FILE *f = fopen(path, "r");
     if (!f) { fprintf(stderr, "Erro: nao foi possivel abrir o arquivo de enderecos '%s'.\n", path); return NULL; }
@@ -85,7 +83,7 @@ static int *read_addresses(const char *path, int *count) {
         lineno++;
         char *p = line;
         while (isspace((unsigned char)*p)) p++;
-        if (*p == '\0') continue;                 /* linha em branco */
+        if (*p == '\0') continue;
         char *e = p; long val = 0; int digits = 0;
         while (isdigit((unsigned char)*e)) { val = val * 10 + (*e - '0'); digits++; e++; if (val > MAX_ADDR) break; }
         while (isspace((unsigned char)*e)) e++;
